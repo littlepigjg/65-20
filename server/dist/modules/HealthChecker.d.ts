@@ -1,0 +1,33 @@
+import { EventEmitter } from 'events';
+import { HealthReport } from '../types';
+export declare class HealthChecker extends EventEmitter {
+    private timer;
+    private cache;
+    private isRunning;
+    private isChecking;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getHealthReport(forceRefresh?: boolean): Promise<HealthReport>;
+    isSyncBlocked(): boolean;
+    getBlockingReasons(): string[];
+    triggerCheck(): Promise<HealthReport>;
+    private waitForCheck;
+    private performCheck;
+    private checkSourceDirAccess;
+    private checkTargetDirAccess;
+    private checkDiskSpace;
+    private getDrivePath;
+    private getDiskSpace;
+    private getDiskSpaceWindows;
+    private getDiskSpaceUnix;
+    private checkWritePermission;
+    private checkFileWatcher;
+    private checkMemoryUsage;
+    private checkConflictCount;
+    private calculateOverallStatus;
+    private getBlockingReasonsFromChecks;
+    private createEmptyReport;
+    private createErrorReport;
+    private logReport;
+}
+export declare const healthChecker: HealthChecker;

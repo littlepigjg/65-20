@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { SyncConfig, SyncStatus, SyncRecord, ConflictFile, ConflictDiff } from './types';
+import { SyncConfig, SyncStatus, SyncRecord, ConflictFile, ConflictDiff, HealthReport } from './types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -32,6 +32,13 @@ export const recordsApi = {
     api.get<SyncRecord[]>(`/records${limit ? `?limit=${limit}` : ''}`).then(r => r.data),
   getRecent: (limit?: number) =>
     api.get<SyncRecord[]>(`/records/recent${limit ? `?limit=${limit}` : ''}`).then(r => r.data)
+};
+
+export const healthApi = {
+  getStatus: (forceRefresh = false) =>
+    api.get<HealthReport>(`/health${forceRefresh ? '?force=true' : ''}`).then(r => r.data),
+  triggerCheck: () =>
+    api.post<HealthReport>('/health/check').then(r => r.data)
 };
 
 export function createEventSource(): EventSource {

@@ -65,6 +65,33 @@ export interface ConflictDiff {
   };
 }
 
+export type HealthStatus = 'healthy' | 'warning' | 'critical';
+
+export type CheckType =
+  | 'sourceDirAccess'
+  | 'targetDirAccess'
+  | 'diskSpace'
+  | 'writePermission'
+  | 'fileWatcher'
+  | 'memoryUsage'
+  | 'conflictCount';
+
+export interface HealthCheckResult {
+  type: CheckType;
+  status: HealthStatus;
+  message: string;
+  details?: Record<string, any>;
+  checkedAt: number;
+}
+
+export interface HealthReport {
+  overallStatus: HealthStatus;
+  checks: HealthCheckResult[];
+  lastCheckedAt: number;
+  syncBlocked: boolean;
+  blockingReasons: string[];
+}
+
 export interface SyncStatus {
   isRunning: boolean;
   sourceDir: string;
@@ -74,4 +101,5 @@ export interface SyncStatus {
   conflictCount: number;
   totalFiles: number;
   recentRecords: SyncRecord[];
+  health: HealthReport;
 }

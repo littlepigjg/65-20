@@ -1,7 +1,7 @@
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
-import { FileState, SyncRecord, SyncStatus, SyncConfig } from '../types';
+import { FileState, SyncRecord, SyncStatus, SyncConfig, HealthReport } from '../types';
 import { getConfig, addSyncRecord, resolveConflict as resolveConflictStorage, getSyncRecords } from '../utils/storage';
 import { getFileState, walkDirectory, isIgnored, readTextFile } from '../utils/file';
 import { ConflictDetector } from './ConflictDetector';
@@ -9,6 +9,7 @@ import { FileWatcher, FileChangeEvent, fileWatcher } from './FileWatcher';
 import { syncStateManager } from './SyncStateManager';
 import { FileSyncer } from './FileSyncer';
 import { StateRecovery } from './StateRecovery';
+import { healthChecker } from './HealthChecker';
 
 export class SyncEngine extends EventEmitter {
   private isRunning = false;
@@ -25,16 +26,33 @@ export class SyncEngine extends EventEmitter {
       this.emit('fileChange', event);
     });
 
+    healthChecker.on('healthChange', (health: HealthReport) => {
+      if (health.syncBlocked) {
+        console.warn('[SyncEngine] Sync blocked due to health issues:', health.blockingReasons);
+      }
+      this.emit('healthChange', health);
+      this.getStatus().then(status => {
+        this.emit('statusChange', status);
+      }).catch(error => {
+        console.error('[SyncEngine] Failed to get status for healthChange event:', error);
+      });
+    });
+
+    await healthChecker.start();
     await fileWatcher.start();
 
     const config = await getConfig();
     this.syncTimer = setInterval(() => {
-      if (this.pendingChanges.length > 0) {
+      if (this.pendingChanges.length > 0 && !healthChecker.isSyncBlocked()) {
         this.sync();
       }
     }, config.syncInterval);
 
-    await this.initialSync();
+    if (!healthChecker.isSyncBlocked()) {
+      await this.initialSync();
+    } else {
+      console.warn('[SyncEngine] Skipping initial sync due to health issues:', healthChecker.getBlockingReasons());
+    }
 
     console.log('[SyncEngine] Started');
     this.emit('statusChange', await this.getStatus());
@@ -50,6 +68,9 @@ export class SyncEngine extends EventEmitter {
 
     await fileWatcher.stop();
     fileWatcher.removeAllListeners('change');
+
+    await healthChecker.stop();
+    healthChecker.removeAllListeners('healthChange');
 
     console.log('[SyncEngine] Stopped');
     this.emit('statusChange', await this.getStatus());
@@ -112,6 +133,12 @@ export class SyncEngine extends EventEmitter {
   }
 
   async fullSync(): Promise<void> {
+    if (healthChecker.isSyncBlocked()) {
+      const reasons = healthChecker.getBlockingReasons();
+      console.error('[SyncEngine] Full sync blocked by health check:', reasons);
+      throw new Error(`同步已被阻止: ${reasons.join('; ')}`);
+    }
+
     console.log('[SyncEngine] Starting full sync...');
 
     const config = await getConfig();
@@ -193,6 +220,11 @@ export class SyncEngine extends EventEmitter {
 
   async sync(): Promise<void> {
     if (this.pendingChanges.length === 0) return;
+
+    if (healthChecker.isSyncBlocked()) {
+      console.warn('[SyncEngine] Sync blocked by health check, pending changes will be retried later');
+      return;
+    }
 
     const changes = [...this.pendingChanges];
     this.pendingChanges = [];
@@ -386,6 +418,7 @@ export class SyncEngine extends EventEmitter {
     const state = await syncStateManager.getState();
     const records = await getSyncRecords();
     const conflicts = await ConflictDetector.getUnresolvedConflicts();
+    const health = await healthChecker.getHealthReport();
 
     return {
       isRunning: this.isRunning,
@@ -395,7 +428,8 @@ export class SyncEngine extends EventEmitter {
       pendingSyncCount: this.pendingChanges.length,
       conflictCount: conflicts.length,
       totalFiles: Object.keys(state.files).length,
-      recentRecords: records.slice(0, 10)
+      recentRecords: records.slice(0, 10),
+      health
     };
   }
 
